@@ -1,0 +1,39 @@
+services:
+  php:
+    image: php-composer:latest 
+    command: php artisan serve --host=0.0.0.0 --port=8081
+    build:
+      context: .
+      dockerfile: Dockerfile          
+    container_name: spotafy-php
+    volumes:
+      - ./:/app
+    depends_on:
+      - mysql
+    networks:
+      - spotafy-net
+    ports:
+      - 8081:8081
+      - 5173:5173
+
+  mysql:
+    image: mysql:8.0
+    container_name: spotafy-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: spotafy_db
+      MYSQL_USER: spotafy_admin
+      MYSQL_PASSWORD: spotafy_2025_toptop@
+    ports:
+      - "6969:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - spotafy-net
+
+networks:
+  spotafy-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
