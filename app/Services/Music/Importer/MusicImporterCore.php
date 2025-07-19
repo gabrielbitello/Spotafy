@@ -103,6 +103,34 @@ class MusicImporterCore {
         }
     }
 
+     public function importarTodasDoArtista(string $nomeArtista): int
+    {
+        Log::info("📥 Iniciando importação em lote para artista: {$nomeArtista}");
+
+        $musicas = $this->spotifyPesquisa->buscarMusicasPorArtista($nomeArtista);
+        if (empty($musicas)) {
+            Log::warning("❌ Nenhuma música encontrada para o artista: {$nomeArtista}");
+            return 0;
+        }
+
+        $totalImportadas = 0;
+
+        foreach ($musicas as $musica) {
+            $termoBusca = "{$musica['artista']} - {$musica['titulo']}";
+            try {
+                $importado = $this->importar($termoBusca);
+                if ($importado) {
+                    $totalImportadas++;
+                }
+            } catch (\Exception $e) {
+                Log::error("⚠️ Erro ao importar '{$termoBusca}': " . $e->getMessage());
+            }
+        }
+
+        Log::info("✅ Importação finalizada para {$nomeArtista}. Total importadas: {$totalImportadas}");
+        return $totalImportadas;
+    }
+
     private function adicionarAoMediaLibrary(Musica $musica, string $arquivoMp3, array $dados): void
     {
         // Renomear arquivo para usar o token

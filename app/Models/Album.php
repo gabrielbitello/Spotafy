@@ -13,7 +13,7 @@ class Album extends Model implements HasMedia
 
     protected $fillable = [
         'titulo',
-        'artista',
+        'artista_id',
         'lancamento',
     ];
 

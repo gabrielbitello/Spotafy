@@ -4,7 +4,7 @@ namespace App\Services\Music\Importer;
 use Symfony\Component\Process\Process;
 
 class Baixador {
-    private $pastaDestino;
+    protected string $pastaDestino;
 
     public function __construct($pastaDestino = null)
     {

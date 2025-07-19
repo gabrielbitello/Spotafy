@@ -50,10 +50,16 @@ RUN composer install --no-dev --optimize-autoloader
 # Instala dependências do npm e builda assets
 RUN npm install && npm run build
 
+RUN npm install vite-plugin-static-copy --save-dev
+
 # Cria diretórios necessários
 RUN mkdir -p storage/app/public/musicas && \
     chmod -R 775 storage bootstrap/cache && \
     chown -R www-data:www-data storage bootstrap/cache
+
+RUN apt-get update && \
+    apt-get install -y imagemagick ghostscript && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Expõe porta
 EXPOSE 8000

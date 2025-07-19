@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import laravel from 'laravel-vite-plugin';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
@@ -16,5 +17,13 @@ export default defineConfig({
             refresh: true,
         }),
         tailwindcss(),
+        viteStaticCopy({
+            targets: [
+                {
+                    src: 'resources/assets/svg/*',
+                    dest: 'svg'
+                }
+            ]
+        })
     ],
 });

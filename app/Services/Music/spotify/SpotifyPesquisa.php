@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use FuzzyWuzzy\Fuzz;
 use FuzzyWuzzy\Process;
 use Illuminate\Support\Str;
+use App\Models\Musica;
 
 
 class SpotifyPesquisa {
@@ -57,12 +58,26 @@ class SpotifyPesquisa {
 
             if ($response->successful() && !empty($response->json('tracks.items'))) {
                 $tracks = $response->json('tracks.items');
-                
+
+                // FILTRO: Remove tracks já baixadas (mesmo título + artista)
+                $tracks = array_filter($tracks, function($track) {
+                    $artist = $track['artists'][0]['name'] ?? '';
+                    $title = $track['name'] ?? '';
+                    return !Musica::where('titulo', $title)
+                        ->whereHas('artista', function($q) use ($artist) {
+                            $q->where('nome', $artist);
+                        })->exists();
+                });
+                $tracks = array_values($tracks);
                 // Para busca ampla, usar threshold menor (40%)
                 $bestMatch = $this->findBestTrackMatchFlexible($tracks, $tituloCompleto);
                 if ($bestMatch) {
-                    Log::info("✅ Match encontrado com busca ampla");
+                    Log::info("✅ Match encontrado com busca ampla (apenas músicas novas)");
                     return $bestMatch; // <- já está formatado
+                } else if (!empty($tracks)) {
+                    // Se não houve match fuzzy, mas há tracks, usa a primeira track retornada
+                    Log::info("⚠️ Nenhum match fuzzy aceitável, mas usando primeira track retornada do Spotify");
+                    return $this->formatSpotifyTrackData($tracks[0]);
                 }
             }
         } catch (\Exception $e) {
@@ -70,6 +85,34 @@ class SpotifyPesquisa {
         }
 
         return null;
+    }
+
+    public function importarTodasDoArtista(string $nomeArtista): int
+    {
+        Log::info("📥 Iniciando importação em lote para artista: {$nomeArtista}");
+
+        $musicas = $this->spotifyPesquisa->buscarMusicasPorArtista($nomeArtista);
+        if (empty($musicas)) {
+            Log::warning("❌ Nenhuma música encontrada para o artista: {$nomeArtista}");
+            return 0;
+        }
+
+        $totalImportadas = 0;
+
+        foreach ($musicas as $musica) {
+            $termoBusca = "{$musica['artista']} - {$musica['titulo']}";
+            try {
+                $importado = $this->importar($termoBusca);
+                if ($importado) {
+                    $totalImportadas++;
+                }
+            } catch (\Exception $e) {
+                Log::error("⚠️ Erro ao importar '{$termoBusca}': " . $e->getMessage());
+            }
+        }
+
+        Log::info("✅ Importação finalizada para {$nomeArtista}. Total importadas: {$totalImportadas}");
+        return $totalImportadas;
     }
 
     /**
