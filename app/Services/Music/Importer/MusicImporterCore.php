@@ -165,16 +165,23 @@ class MusicImporterCore {
                     $extensao = $this->servicos->detectarExtensaoImagem($dados['capa_url']);
                     $nomeCapaTemp = tempnam(sys_get_temp_dir(), 'capa_') . $extensao;
                     file_put_contents($nomeCapaTemp, $capaResponse->body());
-                    
-                    $nomeCapaFinal = $musica->token . '_capa' . $extensao;
-                    
-                    $musica->addMedia($nomeCapaTemp)
-                        ->usingName($dados['titulo'] . ' - Capa')
-                        ->usingFileName($nomeCapaFinal)
-                        ->toMediaCollection('capas');
-                        
-                    unlink($nomeCapaTemp);
-                    Log::info("Capa baixada e adicionada com sucesso");
+
+                    // Só adiciona se o arquivo realmente existe e tem conteúdo
+                    if (file_exists($nomeCapaTemp) && filesize($nomeCapaTemp) > 0) {
+                        $nomeCapaFinal = $musica->token . '_capa' . $extensao;
+                        $musica->addMedia($nomeCapaTemp)
+                            ->usingName($dados['titulo'] . ' - Capa')
+                            ->usingFileName($nomeCapaFinal)
+                            ->toMediaCollection('capas');
+                        Log::info("Capa baixada e adicionada com sucesso");
+                    } else {
+                        Log::warning("Arquivo de capa não existe ou está vazio, não será adicionado ao MediaLibrary");
+                    }
+
+                    if (file_exists($nomeCapaTemp)) {
+                        // Deletar o arquivo temporário
+                        unlink($nomeCapaTemp);
+                    }
                 }
             } catch (\Exception $e) {
                 Log::warning("Erro ao baixar capa: " . $e->getMessage());

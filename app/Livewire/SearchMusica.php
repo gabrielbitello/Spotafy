@@ -9,6 +9,10 @@ use App\Models\Musica;
 use App\Models\Artista;
 use Cocur\Slugify\Slugify;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+
+use App\Jobs\ImportarMusicaJob; // adicione no topo do arquivo
+
 
 class SearchMusica extends Component
 {
@@ -49,11 +53,9 @@ public function pesquisarMusicaNoBanco($slug)
 {
     Log::info('Pesquisa recebida', ['pesquisa' => $slug, 'download' => $this->download]);
 
-    // Converter slug em texto formatado
     $frase = ucwords(str_replace('-', ' ', $slug));
     Log::info('Frase convertida do slug', ['fraseOriginal' => $frase]);
 
-    // Buscar todas as músicas com artistas (join para trazer nome do artista)
     $musicas = Musica::with('artista')
         ->where('titulo', 'LIKE', '%'.$frase.'%')
         ->orWhereHas('artista', function($q) use ($frase) {
@@ -61,7 +63,6 @@ public function pesquisarMusicaNoBanco($slug)
         })
         ->get();
 
-    // Busca secundária pelas palavras isoladas da frase
     if ($musicas->isEmpty()) {
         $palavras = explode(' ', $frase);
         $musicas = Musica::with('artista')->where(function($query) use ($palavras) {
@@ -76,16 +77,22 @@ public function pesquisarMusicaNoBanco($slug)
 
     Log::info('Músicas localizadas', ['count' => $musicas->count()]);
 
-    // Se ainda não encontrou nada, só aí tenta importar
+    // Se ainda não encontrou nada, tenta importar
     if ($musicas->isEmpty()) {
         $this->tentativas = $this->tentativas + 1;
         if ($this->tentativas <= 3) {
-            // Importação síncrona (sem queue)
-            (new MusicImporterCore())->importar($frase);
-            Log::info('Tentando novamente após importação (direto, sem job)', ['tentativa' => $this->tentativas]);
+            $cacheKey = 'importar_musica_job_' . md5($frase);
+            // Se já existe job pendente, não dispara outro
+            if (!Cache::add($cacheKey, true, 120)) { // trava por 2 minutos
+                Log::info('Job de importação já está em andamento para esta pesquisa. Aguardando...');
+                $this->loading = true;
+                return; // Não dispara novo job nem faz nova busca
+            }
+            // Dispara job assíncrono
+            ImportarMusicaJob::dispatch($frase);
+            Log::info('Job de importação disparado', ['tentativa' => $this->tentativas]);
             $this->loading = true;
-            // Após importar, tenta buscar de novo
-            return $this->pesquisarMusicaNoBanco($slug);
+            return; // NÃO chama pesquisarMusicaNoBanco de novo!
         } else {
             $this->erro = true;
             $this->loading = false;
@@ -188,7 +195,7 @@ public function pesquisarMusicaNoBanco($slug)
         }
     }
 
-    // NOVO: Se houver qualquer match de artista forte (score_artista >= 60), NÃO dispara o job
+    // Se houver qualquer match de artista forte (score_artista >= 60), NÃO dispara o job
     $todosMatches = array_merge($exatos, $parciais, $matches);
     $matchArtistaForte = null;
     foreach ($todosMatches as $m) {
@@ -198,15 +205,27 @@ public function pesquisarMusicaNoBanco($slug)
         }
     }
 
-    // Se NÃO houver match perfeito nem artista forte, dispara o job
-    if (!$matchPerfeito && !$matchArtistaForte && $this->tentativas < 3) {
+    // NOVO: Só dispara importação se não houver NENHUM match acima de 70% de probabilidade
+    $temMatchRelevante = false;
+    foreach ($todosMatches as $m) {
+        if (($m['probabilidade'] ?? 0) >= 70) {
+            $temMatchRelevante = true;
+            break;
+        }
+    }
+
+    if (!$temMatchRelevante && $this->tentativas < 3) {
         $this->tentativas++;
-        // Importação síncrona (sem queue)
-        (new MusicImporterCore())->importar($frase);
-        Log::info('Tentando novamente após importação (busca por match perfeito/artista forte, direto, sem job)', ['tentativa' => $this->tentativas]);
+        $cacheKey = 'importar_musica_job_' . md5($frase);
+        if (!Cache::add($cacheKey, true, 120)) {
+            Log::info('Job de importação já está em andamento para esta pesquisa. Aguardando...');
+            $this->loading = true;
+            return;
+        }
+        ImportarMusicaJob::dispatch($frase);
+        \Log::info('Job de importação disparado (nenhum match relevante)', ['tentativa' => $this->tentativas]);
         $this->loading = true;
-        // Após importar, tenta buscar de novo
-        return $this->pesquisarMusicaNoBanco($slug);
+        return;
     }
 
     // Ordena do mais provável para o menos provável (usando probabilidade)

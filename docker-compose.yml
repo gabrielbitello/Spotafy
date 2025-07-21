@@ -1,10 +1,10 @@
 services:
   php:
-    image: php-composer:latest 
+    image: php-composer:latest
     command: php artisan serve --host=0.0.0.0 --port=8081
     build:
       context: .
-      dockerfile: Dockerfile          
+      dockerfile: Dockerfile
     container_name: spotafy-php
     volumes:
       - ./:/app
@@ -15,6 +15,17 @@ services:
     ports:
       - 8081:8081
       - 5173:5173
+
+  queue:
+    image: php-composer:latest
+    command: php artisan queue:work
+    container_name: spotafy-queue
+    volumes:
+      - ./:/app
+    depends_on:
+      - mysql
+    networks:
+      - spotafy-net
 
   mysql:
     image: mysql:8.0
